@@ -40,18 +40,10 @@ echo 'csrf Token '.$csrf_Token.PHP_EOL;
 //For each do 
 	$hackerspace = 'TkkrLab';
 	echo 'Change '.$hackerspace.' to status closed'.PHP_EOL;
+
 	$wikitext = getWikiPage($hackerspace);
-	//set status to closed 
-	//check wiki
-	// /api.php?action=query&list=recentchanges&format=json
-	//check twitter / Auth
-	//https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=tkkrlab&count=2
-	//check feed (atom)
-	//flicker?
-	//ical
+	$wikitext = str_replace('|status=active','|status=closed',$wikitext);
 
-
-	//$wikitext = str_replace('|status=active','|status=closed',$wikitext);
 	//echo 'Edit with csrkToken'.$csrf_Token.PHP_EOL;
 	closeHackerspaceRequest($hackerspace,$wikitext,$csrf_Token);//Step5
 
@@ -128,8 +120,6 @@ function getWikiPage($spaceURLname) {
 
 	$result = getCurl($url);
 	return($result["json"]["parse"]["wikitext"]["*"]);
-	//return $result["json"]["parse"]["wikitext"]["*"]; 
-
 }
 
 
@@ -139,18 +129,7 @@ function closeHackerspaceRequest( $spaceURLname , $newpage,$csrftoken ) {
 
 	//https://wiki.hackerspaces.org/Special:ApiSandbox#action=edit&title=TkkrLab&appendtext=%22Hello%20World%22&format=json
 
-	//get curret page
-	// $params = [
-	// 	"action" => "edit",
-	// 	"title" => $spaceURLname,
-	// 	"token" => $csrftoken,
-	// 	"format" => "json"
-	// ];
-
-
-	// $url = $wikiApi  . "?" . http_build_query( $params );
-
-	// $result = getCurl($url);
+ 	$result = getCurl($url);
 
 	$params = [
 		"action" => "edit",
@@ -158,25 +137,25 @@ function closeHackerspaceRequest( $spaceURLname , $newpage,$csrftoken ) {
 		//"section" => "new",
 		//"nocreate" => false,
 		//"pageid" => $spaceURLname,
-		//"appendtext" => "Hello",
-		"text" => $newpage,
+		"appendtext" => "Hello",
+		//"text" => $newpage,
 		"token" => $csrftoken,
 		"summary" => "Space closed by bot",
-		"bot" => true,
+		//"bot" => true,
 		"format" => "json"
 	];
 
-	var_dump($newpage);
-
 	$url = $wikiApi ;// . "?" . http_build_query( $params );
-
 	$result = getCurl($url,$params);
 
-	echo 'Close by bot : '.print_r($result).PHP_EOL;
+	echo 'Close by bot : '.PHP_EOL;
 
+	if (isset($result['json']['error'])) {
+		var_dump( $result['json']['error']);
+	}
 
 	//solve captcha 
-	if ($result["json"]['edit']['result']=='Failure' and isset(['edit']['captcha']) ) {
+	if ($result['json']['edit']['result']=='Failure' and isset(['json']['edit']['captcha']) ) {
 
 		echo 'Solve Chapta';
 
@@ -189,7 +168,11 @@ function closeHackerspaceRequest( $spaceURLname , $newpage,$csrftoken ) {
 		$url = $wikiApi ;// . "?" . http_build_query( $params );
 
 		$result = getCurl($url,$params);
+		if (isset($result['json']['error'])) {
+			var_dump( $result['json']['error']);
+		};
 	}
+
 
 	//echo ( $result["json"] );
 }
