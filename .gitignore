@@ -1,0 +1,10 @@
+# project files
+settings.php
+cookie.txt
+
+#composer
+/vendor/
+
+
+#sublime
+*.sublime-*
