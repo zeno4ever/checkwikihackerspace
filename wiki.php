@@ -51,7 +51,7 @@ echo 'csrf Token '.$csrf_Token.PHP_EOL;
 	//ical
 
 
-	$wikitext = str_replace('|status=active','|status=closed',$wikitext);
+	//$wikitext = str_replace('|status=active','|status=closed',$wikitext);
 	//echo 'Edit with csrkToken'.$csrf_Token.PHP_EOL;
 	closeHackerspaceRequest($hackerspace,$wikitext,$csrf_Token);//Step5
 
