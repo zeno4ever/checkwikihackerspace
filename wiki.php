@@ -1,5 +1,4 @@
 <?php
-
 /*
     edit.php
 
@@ -15,14 +14,17 @@
 
 include "./settings.php"; //get secret settings
 
+//composer components
+//twitter feed
+require 'vendor/autoload.php';
+
 $loglevel=0;
 $loglevelfile=0;
 $log_path = '.';
 
 //$wikiApi  = "https://test.wikipedia.org/w/api.php";
-//$wikiApi  = "https://wiki.hackerspaces.org/w/api.php";
-// echo getTweets('TkkrLab',4);
-// exit;
+$wikiApi  = "https://wiki.hackerspaces.org/w/api.php";
+
 
 echo 'Base URL '.$wikiApi.PHP_EOL;
 
@@ -47,9 +49,20 @@ echo 'csrf Token '.$csrf_Token.PHP_EOL;
 	//echo 'Edit with csrkToken'.$csrf_Token.PHP_EOL;
 	closeHackerspaceRequest($hackerspace,$wikitext,$csrf_Token);//Step5
 
+	//works,check return value and test with time elapsed.
+	// $unixtime = getDateLastTweet('TkkrLab');
+	// $unixtime = getDateNewsFeed('https://tkkrlab.nl/nieuws/index.xml');
+
+	//todo
+	//$test = getDateLastWikiEdit('https://tkkrlab.nl/wiki/');
+	//getCalenderFeed('http://tinyurl.com/6bbzrpt');
+
+
 //all done, logout
 echo 'Logout'.PHP_EOL;
 logoutRequest($csrf_Token);
+
+
 
 // Step 1: GET request to fetch login token
 function getLoginToken() {
@@ -75,6 +88,8 @@ function getLoginToken() {
 function loginRequest( $logintoken ) {
 	global $wikiApi ;
 
+	echo 'Logintoken is '.$logintoken.PHP_EOL;
+
 	$params = [
 		"action" => "login",
 		"lgname" => $botUser,
@@ -86,6 +101,7 @@ function loginRequest( $logintoken ) {
 	$url = $wikiApi;//  . "?" . http_build_query( $params );
 
 	$result = getCurl($url,$params);
+	var_dump($result);
 }
 
 // Step 3: GET request to fetch CSRF token
@@ -99,7 +115,6 @@ function getCSRFToken() {
 	];
 
 	$url = $wikiApi  . "?" . http_build_query( $params );
-
 
 	$result = getCurl($url);
 
@@ -151,7 +166,7 @@ function closeHackerspaceRequest( $spaceURLname , $newpage,$csrftoken ) {
 	echo 'Close by bot : '.PHP_EOL;
 
 	if (isset($result['json']['error'])) {
-		var_dump( $result['json']['error']);
+		//var_dump( $result['json']['error']);
 	}
 
 	//solve captcha 
@@ -215,12 +230,13 @@ function getCaptchaAnswer($question) {
 
 
 function getCurl($url,$fields=null,$timeout=240) {
-    global $messages;
+    //global $messages;
 
     $curlSession = curl_init();
     curl_setopt($curlSession, CURLOPT_BINARYTRANSFER, true);
     curl_setopt($curlSession, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($curlSession, CURLOPT_USERAGENT, "mapall.space");
+    curl_setopt($curlSession, CURLOPT_USERAGENT, "http://mapall.space");
+
     //for redirect
     curl_setopt($curlSession, CURLOPT_FOLLOWLOCATION, true);
     
@@ -236,25 +252,43 @@ function getCurl($url,$fields=null,$timeout=240) {
     	curl_setopt( $curlSession, CURLOPT_POSTFIELDS, http_build_query( $fields ) );
     };
 
+    //curl_setopt( $curlSession, CURLOPT_HEADERFUNCTION, "CurlHeader");
 
-    $space_api_json = curl_exec($curlSession);
+    $result = curl_exec($curlSession);
     $curl_error = curl_errno($curlSession);
     $curl_info = curl_getinfo($curlSession,CURLINFO_HTTP_CODE);
+    $curl_ssl  = curl_getinfo($curlSession, CURLINFO_SSL_VERIFYRESULT);
+
+    if ($curl_ssl!=0) {
+		echo 'SSL verify error '.$curl_ssl.PHP_EOL;
+    }
 
     curl_close($curlSession);
 
     if ( $curl_error == 0 && $curl_info == 200 ) {
-        $json = json_decode($space_api_json, true);
+        $json = json_decode($result, true);
         if ($json != null ){
             return array('json'=>$json,'error'=>0 );
         } else {
-            return array('json'=>null,'error'=>1000 );
+    		//try to convert xml to json
+    		//$xml = simplexml_load_string($result);
+			//$json = json_decode(json_encode($xml),true);
+			if ($json!=null) {
+				return array('json'=>$json,'error'=>0 );
+			} else {
+	            return array('json'=>null,'error'=>1000 );
+			};
         };
     } else {
         $error = ($curl_error!=0) ? $curl_error : $curl_info;  
         return array('json'=>null,'error'=>$error);
     };
 };
+
+function CurlHeader( $curl, $header_line ) {
+    //echo "<br>YEAH: ".$header_line; // or do whatever
+    //return strlen($header_line);
+}
 
 function message($message,$lineloglevel=0) {
     global $loglevel;
@@ -277,122 +311,156 @@ function message($message,$lineloglevel=0) {
     };
 }
 
-function getTweets($user, $count) {
-    $datas = file_get_contents('https://mobie.twitter.com/'.$user);
+function getDateLastTweet($user) {
+	global $twitter;
+	//check https://developer.twitter.com/en/docs/tweets/timelines/api-reference/get-statuses-user_timeline
+	//GET https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=twitterapi&count=2 
+	$url = 'https://api.twitter.com/1.1/statuses/user_timeline.json';
+	$getfield = "?screen_name=$user&count=1";
+	$requestMethod = 'GET';
 
-    preg_match_all('/data-id="[0-9]{19}/s',$datas,$matchetweets,PREG_SET_ORDER);
-    //echo '['.$matchetweets[0].']';
-    //1237340054885892097
-    //1583874258
-    //1237340054885
+	$result = json_decode($twitter->setGetfield($getfield)
+	             ->buildOauth($url, $requestMethod)
+	             ->performRequest(),JSON_OBJECT_AS_ARRAY);
+	$datetime =  strtotime($result[0]['created_at']);
 
-
-	var_dump($matchetweets);
-
-    //echo(date("F d, y h:i:s A", 1237340054));
-
-    for ($i = 1; $i <= $count; $i++) {
-    	echo 's=['.$matchetweets[$i][0].']';
-    	echo 'String = ['.substr($matchetweets[$i][0],9,10).']'.PHP_EOL;
-    	echo 'Datum = '.date("F d, Y h:i:s A", substr($matchetweets[$i][0],9,10)).PHP_EOL;
-    	//$matchetweets[$i][0]
-    }
-
-    //echo(date("F d, Y h:i:s A", $matchetweets[0]));
-
-   
-
-    // preg_match_all('/<div class="tweet-text" data-id="\d*">(.*?)<\/div>/s', $datas, $matchetweets, PREG_SET_ORDER);
-
-    // for ($i = 1; $i <= $count; $i++) {
-    //     $matchetweets[$i][0] = preg_replace('/<div class="dir-ltr" dir="ltr">/', '', $matchetweets[$i][0]);
-    //     $matchetweets[$i][0] = preg_replace('/\s+/', ' ', $matchetweets[$i][0]);
-    //     $matchetweets[$i][0] = str_replace('"> ', '">', $matchetweets[$i][0]);
-
-    //     echo '<li>'.$matchetweets[$i][0].'</li>'."\n";
-    // }
-
+	return date("Y-d-m H:i",strtotime($result[0]['created_at']));
 };
 
-// $req_url = 'https://api.twitter.com/oauth/request_token';
-// $authurl = 'https://api.twitter.com/oauth/authorize';
-// $acc_url = 'https://api.twitter.com/oauth/access_token';
-// $api_url = 'https://api.twitter.com/1.1/account';
-// $conskey = '0ofOq8ENZuiUiCBNExmg';
-// $conssec = '716oYAPRVfqVVCX4wwGrvtgOzMRKzt1sy8snKiW3U0';
+function getDateLastWikiEdit($wiki) {
+	//https://tkkrlab.nl/w/api.php?action=query&format=json&list=recentchanges
+	$result = getCurl($wiki.'/w/api.php?action=query&format=json&list=recentchanges');
+	var_dump($result);
+}
 
-// $httpClient = new \SocialConnect\HttpClient\Curl();
+function getDateNewsFeed($feed) {
+	$result = getCurl($feed);
+	return 	strtotime($result['json']['channel']['lastBuildDate']);
+}
+
+function getCalenderFeed($ical) {
+	$result = getCurl($ical);
+	var_dump($result);
+}
+
+//HTTP Header -> Last Modified : 
+//https://stackoverflow.com/questions/9183178/can-php-curl-retrieve-response-headers-and-body-in-a-single-request
+
+function getFacebook($user) {
+	global $fb;
+	$fbToken = 'EAAF5VbXNUPsBAEMEjFlIIOhStvkHTi3VnrtodGMj9SloErWQLvr9OYTJwc2ZCYZCZASeuRq28QoWnU5kRIEiod6DiZCwkuLZAZAS3ZCqk7pZCU3JxJYukJFY2pPthMX7cORAqIZCCkU4ocuqBlZBSZB5YuJRmF7tqOf3IUSsX6iw0Nj82T2cM6tOpjCH8smcsJXam9XEQUBiONJyz5sdwvCJvAwa6HgBPQczQWxbUEahtJgzdoQNeZAS1DVX3Hv5QkiS658ZD';
+
+	$helper = $fb->getPageTabHelper();
+
+try {
+  $accessToken = $helper->getAccessToken();
+} catch(Facebook\Exceptions\FacebookResponseException $e) {
+  // When Graph returns an error
+  echo 'Graph returned an error: ' . $e->getMessage();
+  exit;
+} catch(Facebook\Exceptions\FacebookSDKException $e) {
+  // When validation fails or other local issues
+  echo 'Facebook SDK returned an error: ' . $e->getMessage();
+  exit;
+}
+
+if (! isset($accessToken)) {
+  echo 'No OAuth data could be obtained from the signed request. User has not authorized your app yet.';
+  exit;
+}
+
+// Logged in
+echo '<h3>Page ID</h3>';
+var_dump($helper->getPageId());
+
+echo '<h3>User is admin of page</h3>';
+var_dump($helper->isAdmin());
+
+echo '<h3>Signed Request</h3>';
+var_dump($helper->getSignedRequest());
+
+echo '<h3>Access Token</h3>';
+var_dump($accessToken->getValue());
+// OR
 
 
-// $configureProviders = [
-//     'redirectUri' => 'http://sconnect.local/auth/cb/${provider}/',
-//     'provider' => [
-//         'facebook' => [
-//             'applicationId' => '',
-//             'applicationSecret' => '',
-//             'scope' => ['email'],
-//             'options' => [
-//                 'identity.fields' => [
-//                     'email',
-//                     'picture.width(99999)'
-//                 ],
-//             ],
-//         ],
-//     ],
-// ];
 
-// $service = new \SocialConnect\Auth\Service(
-//     $httpStack,
-//     new \SocialConnect\Provider\Session\Session(),
-//     $configureProviders,
-//     $collectionFactory
-// );
 
-// /**
-//  * By default collection factory is null, in this case Auth\Service will create 
-//  * a new instance of \SocialConnect\Auth\CollectionFactory
-//  * you can use custom or register another providers by CollectionFactory instance
-//  */
-// $collectionFactory = null;
 
-// $service = new \SocialConnect\Auth\Service(
-//     $httpClient,
-//     new \SocialConnect\Provider\Session\Session(),
-//     $configureProviders,
-//     $collectionFactory
-// );
+// 	$helper = $fb->getRedirectLoginHelper();
 
-// //session_start();
-// function twitterLogin() {
-
-// 	// In state=1 the next request should include an oauth_token.
-// 	// If it doesn't go back to 0
-// 	if(!isset($_GET['oauth_token']) && $_SESSION['state']==1) $_SESSION['state'] = 0;
-// 		try {
-// 		  $oauth = new OAuth($conskey,$conssec,OAUTH_SIG_METHOD_HMACSHA1,OAUTH_AUTH_TYPE_URI);
-// 		  $oauth->enableDebug();
-// 		  if(!isset($_GET['oauth_token']) && !$_SESSION['state']) {
-// 		    $request_token_info = $oauth->getRequestToken($req_url);
-// 		    $_SESSION['secret'] = $request_token_info['oauth_token_secret'];
-// 		    $_SESSION['state'] = 1;
-// 		    header('Location: '.$authurl.'?oauth_token='.$request_token_info['oauth_token']);
-// 		    exit;
-// 		  } else if($_SESSION['state']==1) {
-// 		    $oauth->setToken($_GET['oauth_token'],$_SESSION['secret']);
-// 		    $access_token_info = $oauth->getAccessToken($acc_url);
-// 		    $_SESSION['state'] = 2;
-// 		    $_SESSION['token'] = $access_token_info['oauth_token'];
-// 		    $_SESSION['secret'] = $access_token_info['oauth_token_secret'];
-// 		  } 
-// 		  $oauth->setToken($_SESSION['token'],$_SESSION['secret']);
-// 		  //$oauth->fetch("$api_url/user.json");
-// 		  $oauth->fetch("$api_url/verify_credentials.json");
-// 		  $json = json_decode($oauth->getLastResponse());
-// 		  print_r($json);
-// 		} catch(OAuthException $E) {
-// 		  print_r($E);
+// 	try {
+// 	  $accessToken = $helper->getAccessToken();
+// 	} catch(Facebook\Exceptions\FacebookResponseException $e) {
+// 	  // When Graph returns an error
+// 	  echo 'Graph returned an error: ' . $e->getMessage();
+// 	  exit;
+// 	} catch(Facebook\Exceptions\FacebookSDKException $e) {
+// 	  // When validation fails or other local issues
+// 	  echo 'Facebook SDK returned an error: ' . $e->getMessage();
+// 	  exit;
 // 	}
 
-// }
+
+// 	var_dump($accessToken);
+
+// if (! $accessToken->isLongLived()) {
+//   // Exchanges a short-lived access token for a long-lived one
+//   try {
+//     $accessToken = $oAuth2Client->getLongLivedAccessToken($accessToken);
+//   } catch (Facebook\Exceptions\FacebookSDKException $e) {
+//     echo "<p>Error getting long-lived access token: " . $e->getMessage() . "</p>\n\n";
+//     exit;
+//   }
+
+//   echo '<h3>Long-lived</h3>';
+//   var_dump($accessToken->getValue());
+//}
+
+//$_SESSION['fb_access_token'] = (string) $accessToken;
+
+
+
+
+return;
+
+	// try {
+	//   // Returns a `Facebook\FacebookResponse` object
+	//   $response = $fb->get('/me?fields=id,name', '{access-token}');
+	// } catch(Facebook\Exceptions\FacebookResponseException $e) {
+	//   echo 'Graph returned an error: ' . $e->getMessage();
+	//   exit;
+	// } catch(Facebook\Exceptions\FacebookSDKException $e) {
+	//   echo 'Facebook SDK returned an error: ' . $e->getMessage();
+	//   exit;
+	// }
+
+
+
+
+	// $user = $response->getGraphUser();
+
+	// echo 'Name: ' . $user['name'];
+
+	// return ;
+
+	//http://johndoesdesign.com/blog/2011/php/adding-a-facebook-news-status-feed-to-a-website/
+	//Get the contents of the Facebook page
+	$FBpage = file_get_contents('https://graph.facebook.com/PAGE_ID/feed?access_token=ACCESS_TOKEN');
+	//Interpret data with JSON
+	$FBdata = json_decode($FBpage);
+	//Loop through data for each news item
+	foreach ($FBdata->data as $news )
+	{
+		//Explode News and Page ID's into 2 values
+		$StatusID = explode("_", $news->id);
+		echo '<li>';
+		//Check for empty status (for example on shared link only)
+		if (!empty($news->message)) { echo $news->message;}
+		echo '</li>';
+	};
+	
+
+};
 
 ?>
